@@ -32,16 +32,17 @@
 .PARAMETER Mode
     Core (smaller payload) or Extended (full field set). Defaults to Core for NTAG213 and
     Extended for NTAG215/NTAG216. Extended is not possible on NTAG213. A 1.003 concept only:
-    OpenTag3D 2.000 is one flat block, so -Mode is ignored there.
+    OpenTag3D 2.x is one flat block, so -Mode is ignored there.
 
 .PARAMETER SpecVersion
-    Which OpenTag3D layout to produce: 1.003 or 2.000. Omit to keep whatever the lookup
+    Which OpenTag3D layout to produce: 1.003, 2.000 or 2.001. Omit to keep whatever the lookup
     service returns, which is the lossless option and what earlier versions of this module
     did. Naming a version converts the payload if the service returned the other one; the
     conversion matches fields by id and warns about anything that cannot carry across
-    (2.000's sku, barcode, nozzle_diameter and chamber_temp have no home in 1.003).
+    (2.x's sku, barcode, nozzle_diameter and chamber_temp have no home in 1.003, and
+    mfi_value is relabelled between 2.000 and 2.001).
 
-    2.000 cannot be written to an NTAG213 - 216 bytes of payload against 144 bytes of user
+    2.x cannot be written to an NTAG213 - 216 bytes of payload against 144 bytes of user
     memory - so that combination is refused.
 
 .PARAMETER Format
@@ -112,7 +113,7 @@
         [string]$Format = 'Ndef',
 
         [Parameter()]
-        [ValidateSet('1.003','2.000')]
+        [ValidateSet('1.003','2.000','2.001')]
         [string]$SpecVersion,
 
         [Parameter(ParameterSetName = 'ToFile')]
@@ -198,8 +199,9 @@
         }
 
         $effective = if ($payload) { Get-OpenTag3DPayloadVersion -Payload $payload } else { $null }
-        if ($TagType -eq 'NTAG213' -and $effective -eq '2.000') {
-            throw "OpenTag3D 2.000 cannot be written to an NTAG213 - the payload alone is $($payload.Length) bytes against 144 bytes of user memory. Use -TagType NTAG215 or NTAG216, or -SpecVersion 1.003."
+        if ($TagType -eq 'NTAG213' -and $effective -and
+            (Get-OpenTag3DSpec -SpecVersion $effective).Major -ge 2) {
+            throw "OpenTag3D $effective cannot be written to an NTAG213 - the payload alone is $($payload.Length) bytes against 144 bytes of user memory. Use -TagType NTAG215 or NTAG216, or -SpecVersion 1.003."
         }
 
         $image = New-OpenTag3DImage -Data $data -TagType $TagType -Format $Format

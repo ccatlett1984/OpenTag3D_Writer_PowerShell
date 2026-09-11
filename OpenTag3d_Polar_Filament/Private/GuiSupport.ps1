@@ -171,8 +171,8 @@ function Invoke-OpenTag3DGuiAction {
             $version = Get-OpenTag3DPayloadVersion -Payload $base
             $spec    = Get-OpenTag3DSpec -SpecVersion $version
 
-            if ($r.tagType -eq 'NTAG213' -and $version -eq '2.000') {
-                return @{ ok = $false; message = "OpenTag3D 2.000 cannot be written to an NTAG213: the payload is $($full.Length) bytes against 144 bytes of user memory. Choose NTAG215 or NTAG216, or switch the spec version to 1.003." }
+            if ($r.tagType -eq 'NTAG213' -and $spec.Major -ge 2) {
+                return @{ ok = $false; message = "OpenTag3D $version cannot be written to an NTAG213: the payload is $($full.Length) bytes against 144 bytes of user memory. Choose NTAG215 or NTAG216, or switch the spec version to 1.003." }
             }
 
             # NTAG213 holds 1.003 Core only; cut the payload at 0x70. Anything populated above
@@ -197,7 +197,7 @@ function Invoke-OpenTag3DGuiAction {
             $record = New-OpenTag3DNdefRecord -Payload $payload
             $image  = New-OpenTag3DImage -Data $record -TagType $r.tagType -Format Ndef
 
-            # 2.000 marks ten fields required. An incomplete tag is still a tag, so this is
+            # 2.x marks ten fields required. An incomplete tag is still a tag, so this is
             # said rather than enforced.
             $missing = @(Get-OpenTag3DMissingRequiredField -Values $values -SpecVersion $version)
             $warn    = if ($missing.Count) { " Required by $($version) but left empty: $($missing -join ', ')." } else { '' }
@@ -401,7 +401,8 @@ function Get-OpenTag3DGuiHtml {
       <div>
         <label for="eSpec">Spec version</label>
         <select id="eSpec">
-          <option value="2.000" selected>2.000</option>
+          <option value="2.001" selected>2.001</option>
+          <option value="2.000">2.000</option>
           <option value="1.003">1.003</option>
         </select>
       </div>
@@ -507,6 +508,7 @@ function Get-OpenTag3DGuiHtml {
     <option value="" selected>As served by the lookup</option>
     <option value="1.003">1.003</option>
     <option value="2.000">2.000</option>
+    <option value="2.001">2.001</option>
   </select>
   <p class="note" id="specNote"></p>
 </fieldset>
@@ -622,12 +624,12 @@ function Get-OpenTag3DGuiHtml {
   $('serial').addEventListener('keydown', e => { if (e.key === 'Enter') run('export'); });
 
   // ---- spec version ----
-  // 2.000 dropped NTAG213 (216 bytes of payload against 144 bytes of user memory), so the
-  // chip is taken out of the list rather than left there to fail on write. It comes back
-  // when 1.003 is selected. Mode is a 1.003 concept too - 2.000 is one flat block.
+  // OpenTag3D 2.x dropped NTAG213 (216 bytes of payload against 144 bytes of user memory),
+  // so the chip is taken out of the list rather than left there to fail on write. It comes
+  // back when 1.003 is selected. Mode is a 1.003 concept too - 2.x is one flat block.
   function applySpec(specSel, typeSel, modeSel, note) {
     const v = specSel.value;
-    const v2 = v === '2.000';
+    const v2 = v.charAt(0) === '2';
 
     const had = typeSel.value;
     if (v2) {
@@ -642,12 +644,12 @@ function Get-OpenTag3DGuiHtml {
 
     if (modeSel) {
       modeSel.disabled = v2;
-      modeSel.title = v2 ? 'OpenTag3D 2.000 is one flat block - Core and Extended are 1.003 only'
+      modeSel.title = v2 ? 'OpenTag3D 2.x is one flat block - Core and Extended are 1.003 only'
                          : '';
     }
     if (note) {
       note.textContent = v2
-        ? 'OpenTag3D 2.000: one 216-byte block, four extra fields (SKU, barcode, nozzle, chamber temp), NTAG215 or NTAG216 only.'
+        ? 'OpenTag3D ' + v + ': one 216-byte block, four extra fields (SKU, barcode, nozzle, chamber temp), NTAG215 or NTAG216 only.'
         : (v === '1.003' ? 'OpenTag3D 1.003: Core 112 bytes, Extended 187. Fits any NTAG21x.'
                          : 'Whatever the lookup service returns is written unchanged.');
     }

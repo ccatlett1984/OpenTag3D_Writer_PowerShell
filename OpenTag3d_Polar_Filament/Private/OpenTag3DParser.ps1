@@ -2,22 +2,26 @@
 #
 #   1.003  https://opentag3d.info/spec.json - the released version, and the one the Polar
 #          lookup service serves. Core 0x00-0x6F, Extended 0x70-0xBA.
-#   2.000  https://opentag3d.info/spec.json - released; the site moved from 1.003 to 2.000
-#          on or before 2026-09-03. One flat block, most fields relocated, four new fields,
-#          and NTAG213 dropped (216 bytes cannot fit 144 bytes of user memory).
+#   2.000  Released on or before 2026-09-03. One flat block, most fields relocated, four new
+#          fields, and NTAG213 dropped (216 bytes cannot fit 144 bytes of user memory).
+#   2.001  https://opentag3d.info/spec.json - current. Identical to 2.000 but for mfi_value,
+#          which stops being divided by 10 and is read as plain g/min. Same 40 fields, same
+#          addresses, same 216 bytes - the stored byte does not change, only what it means.
 #
-# The two layouts share only tag_version, material and material_mod addresses, so they are
-# separate tables rather than one table with edits. A payload always carries its own version
-# at 0x00, which is what selects the table when decoding.
+# 1.003 and the 2.x layouts share only tag_version, material and material_mod addresses, so
+# they are separate tables rather than one table with edits. A payload always carries its own
+# version at 0x00, which is what selects the table when decoding.
 #
 # All integers unsigned big-endian; strings UTF-8 unless the field says ASCII.
 
-$script:OpenTag3DSpecVersions       = @('1.003','2.000')
+# Oldest first: Get-OpenTag3DPayloadVersion walks these in order when a payload declares a
+# version with no exact table.
+$script:OpenTag3DSpecVersions       = @('1.003','2.000','2.001')
 
-# What a new tag is built as when nothing says otherwise. 2.000 since 1.7.0: it is the
-# published spec and what the Polar lookup service serves. 1.003 stays fully supported -
-# reading picks the table from the payload, so old tags are unaffected.
-$script:OpenTag3DDefaultSpecVersion = '2.000'
+# What a new tag is built as when nothing says otherwise. 2.001 since 1.8.0: it is the
+# published spec. 1.003 and 2.000 stay fully supported - reading picks the table from the
+# payload, so tags already written are unaffected.
+$script:OpenTag3DDefaultSpecVersion = '2.001'
 
 # Fields the editor shows but never lets you change. The serial identifies the spool and is
 # what the lookup keys on; the tag version describes the format, not the filament.
@@ -132,6 +136,24 @@ $script:OpenTag3DFieldsV2 = @(
     @{ Id='data_url';            Name='Online Data URL';      Start=0xB8; Length=32; Type='ascii'; Group='Operational' }
 )
 
+# --- 2.001 -------------------------------------------------------------------------------
+# One correction to 2.000, verified against opentag3d.info/spec.json on 2026-09-11:
+# mfi_value loses its scaling of 10 and its unit becomes g/min rather than g/10min. The byte
+# is unchanged - 2.000 read a raw 63 as "630 g/10min" and 2.001 reads it as "63 g/min", which
+# is the same rate written sensibly. Everything else - all 40 ids, addresses, lengths, types,
+# scalings and required flags - is identical, so the table is derived from 2.000 rather than
+# copied. Unchanged fields are shared by reference; nothing mutates a field definition.
+$script:OpenTag3DFieldsV2001 = @(
+    foreach ($f in $script:OpenTag3DFieldsV2) {
+        if ($f.Id -ne 'mfi_value') { $f; continue }
+        $c = @{}
+        foreach ($k in $f.Keys) { $c[$k] = $f[$k] }
+        $c.Remove('Scale')
+        $c.Unit = 'g/min'
+        $c
+    }
+)
+
 $script:OpenTag3DSpecs = [ordered]@{
     '1.003' = @{
         Version    = '1.003'
@@ -155,6 +177,18 @@ $script:OpenTag3DSpecs = [ordered]@{
         # The spec declares the block as 0x00-0xDF (224), but nothing is defined past
         # data_url's last byte at 0xD7. 216 is therefore the payload every field fits in,
         # and it is also what pfil.us emits.
+        CoreSize   = 0xD8           # 216
+        FullSize   = 0xD8           # 216
+        GroupOrder = @('Display','Inventory','Operational')
+        Source     = 'opentag3d.info/spec.json, as published up to 2026-09-04'
+    }
+    '2.001' = @{
+        Version    = '2.001'
+        Raw        = 2001
+        Major      = 2
+        Alpha      = $false
+        Fields     = $script:OpenTag3DFieldsV2001
+        HasModes   = $false
         CoreSize   = 0xD8           # 216
         FullSize   = 0xD8           # 216
         GroupOrder = @('Display','Inventory','Operational')
@@ -223,10 +257,22 @@ function Get-OpenTag3DPayloadVersion {
     $raw   = ([int]$Payload[0] -shl 8) -bor $Payload[1]
     $major = [math]::Floor($raw / 1000)
 
+    # An exact table always wins.
     foreach ($v in $script:OpenTag3DSpecVersions) {
-        if ($script:OpenTag3DSpecs[$v].Major -eq $major) { return $v }
+        if ($script:OpenTag3DSpecs[$v].Raw -eq $raw) { return $v }
     }
-    return $null
+
+    # Otherwise the closest table below it in the same major - a 2.002 tag is read with the
+    # 2.001 table, not the 2.000 one, since minor releases are corrections on what came
+    # before. ConvertFrom-OpenTag3DPayload warns when it does this.
+    $sameMajor = @($script:OpenTag3DSpecVersions | Where-Object { $script:OpenTag3DSpecs[$_].Major -eq $major })
+    if (-not $sameMajor) { return $null }
+
+    $below = @($sameMajor | Where-Object { $script:OpenTag3DSpecs[$_].Raw -le $raw })
+    if ($below) { return $below[-1] }
+
+    # Older than every table in its major: the earliest is the best guess.
+    return $sameMajor[0]
 }
 
 function Get-OpenTag3DNdefPayload {
@@ -533,11 +579,16 @@ function Get-OpenTag3DMissingRequiredField {
     }
 }
 
-# Unit changes between versions. Only 'tolerance' moved: micrometres in 1.003, hundredths of
-# a millimetre in 2.000. Anything else that differs is refused rather than guessed at.
+# Unit changes between versions. Two so far: 'tolerance' is micrometres in 1.003 and
+# hundredths of a millimetre in 2.x, and 'mfi_value' is g/10min in 2.000 and g/min in 2.001.
+# Anything else that differs is refused rather than guessed at.
 $script:OpenTag3DUnitFactor = @{
     "$($script:Um)|mm" = 0.001
     "mm|$($script:Um)" = 1000
+    # 2.000 -> 2.001 relabelled mfi_value: 630 g/10min and 63 g/min are the same rate, and
+    # encode to the same byte, so this keeps the value rather than changing it.
+    'g/10min|g/min'    = 0.1
+    'g/min|g/10min'    = 10
 }
 
 function Convert-OpenTag3DPayload {

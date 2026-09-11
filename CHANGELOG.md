@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.0
+- **OpenTag3D 2.001 support**, and it is now the default for new tags. 2.001 is 2.000 with one
+  correction: `mfi_value` loses its scaling of 10 and reads as plain `g/min` rather than
+  `g/10min`. The stored byte is unchanged - a raw `63` is `630 g/10min` under 2.000 and
+  `63 g/min` under 2.001, the same rate written sensibly - so the 2.001 table is derived from
+  the 2.000 one rather than duplicated, and converting between the two leaves the bytes alone.
+  Checked field by field against opentag3d.info/spec.json on 2026-09-11
+- **Writing refuses to change a spool's spec version.** `Write-OpenTag3DTag` reads the version
+  off the tag first; if it differs from the image's, nothing is written - not even the
+  capability container - and the error names both versions. A blank tag, or one holding
+  something that is not an OpenTag3D record, has nothing to disagree with and writes normally.
+  `-Force` overrides, with a warning
+- Version lookup now prefers an exact table and otherwise takes the closest one below it in the
+  same major, so a future 2.002 tag is read with the 2.001 table rather than the 2.000 one
+- The NTAG213 refusal, the GUI's tag-type list and the Mode control now key on the major
+  version rather than testing for 2.000 specifically
+
 ## 1.7.0
 - **OpenTag3D 2.000 support, alongside 1.003.** The two layouts share only three addresses,
   so they are separate field tables behind a spec registry rather than one table with edits.

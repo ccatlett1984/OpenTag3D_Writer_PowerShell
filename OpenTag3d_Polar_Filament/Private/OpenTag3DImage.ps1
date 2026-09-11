@@ -37,6 +37,39 @@ function New-OpenTag3DNdefRecord {
     return ,[byte[]]($header + $type + $Payload)
 }
 
+function Get-OpenTag3DPayloadStart {
+    <#
+    .SYNOPSIS
+        Offset of the payload within user memory, from the NDEF TLV and record headers.
+    .DESCRIPTION
+        Get-OpenTag3DNdefPayload needs the whole message; this needs only the headers, so a
+        few pages read off a tag are enough to find the version bytes without pulling the
+        entire payload back. Returns $null if the headers are not an application/opentag3d
+        record, or if the bytes given stop before the headers end.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [byte[]]$UserMemory)
+
+    if ($UserMemory.Length -lt 4 -or $UserMemory[0] -ne 0x03) { return $null }
+
+    $i = if ($UserMemory[1] -eq 0xFF) { 4 } else { 2 }        # TLV length: 1 byte, or 0xFF + 2
+    if ($i + 2 -gt $UserMemory.Length) { return $null }
+
+    $flags   = $UserMemory[$i]
+    $short   = ($flags -band 0x10) -ne 0
+    $typeLen = $UserMemory[$i + 1]
+    $j = $i + 2
+
+    $j += if ($short) { 1 } else { 4 }                        # payload length field
+    if (($flags -band 0x08) -ne 0) { $j += 1 }                # ID length present
+    if ($j + $typeLen -gt $UserMemory.Length) { return $null }
+
+    $type = [Text.Encoding]::ASCII.GetString($UserMemory[$j..($j + $typeLen - 1)])
+    if ($type -ne 'application/opentag3d') { return $null }
+
+    return $j + $typeLen
+}
+
 function Get-OpenTag3DRecordPayload {
     <#
     .SYNOPSIS
@@ -102,15 +135,16 @@ function New-OpenTag3DImage {
     else { $content = $Data }
 
     if ($content.Length -gt $spec.UserSize) {
-        # 2.000 dropped NTAG213: 216 bytes of payload plus NDEF framing cannot fit 144 bytes
-        # of user memory, whatever the data. Say so rather than reporting a bare size.
+        # OpenTag3D 2.x dropped NTAG213: 216 bytes of payload plus NDEF framing cannot fit
+        # 144 bytes of user memory, whatever the data. Say so rather than a bare size.
         $payloadVersion = if ($Format -eq 'Ndef' -and $Data.Length -gt 24) {
                               Get-OpenTag3DPayloadVersion -Payload $Data[24..($Data.Length - 1)]
                           } else {
                               Get-OpenTag3DPayloadVersion -Payload $Data
                           }
-        if ($TagType -eq 'NTAG213' -and $payloadVersion -eq '2.000') {
-            throw "OpenTag3D 2.000 cannot be written to an NTAG213: $($Data.Length) bytes of record plus NDEF framing comes to $($content.Length), against 144 bytes of user memory. Use an NTAG215 or NTAG216, or build the tag as 1.003."
+        if ($TagType -eq 'NTAG213' -and $payloadVersion -and
+            (Get-OpenTag3DSpec -SpecVersion $payloadVersion).Major -ge 2) {
+            throw "OpenTag3D $payloadVersion cannot be written to an NTAG213: $($Data.Length) bytes of record plus NDEF framing comes to $($content.Length), against 144 bytes of user memory. Use an NTAG215 or NTAG216, or build the tag as 1.003."
         }
         throw "Content is $($content.Length) bytes - exceeds $TagType user memory ($($spec.UserSize))."
     }

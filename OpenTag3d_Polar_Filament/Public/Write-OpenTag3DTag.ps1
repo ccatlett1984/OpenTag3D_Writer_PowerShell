@@ -26,6 +26,10 @@
 .PARAMETER ReaderName
     Substring of the PC/SC reader name. Defaults to the first reader matching 'ACR122'.
 
+.PARAMETER Force
+    Write even when the spool already holds a different OpenTag3D spec version. Without it a
+    mismatch is refused and nothing is written, tag and image versions both named.
+
 .PARAMETER SkipBlankPages
     Do not write pages whose image bytes are all zero. Faster on blank tags, but leaves stale
     data behind when rewriting a tag that already holds a longer payload.
@@ -72,7 +76,9 @@
         [Parameter()]
         [string]$ReaderName,
 
-        [switch]$SkipBlankPages
+        [switch]$SkipBlankPages,
+
+        [switch]$Force
     )
     process {
         if ($PSCmdlet.ParameterSetName -eq 'Path') {
@@ -106,6 +112,42 @@
             Write-Verbose "Detected $($actual.TagType) via $($actual.Method)"
             if ($actual.TagType -ne $spec.TagType) {
                 throw "Tag on the reader is an $($actual.TagType) ($($actual.UserSize) bytes user memory) but this image is for an $($spec.TagType). Rebuild with -TagType $($actual.TagType)."
+            }
+
+            # --- refuse to change the spec version of a tag already carrying data ---
+            # Writing 2.001 over a 1.003 spool silently changes what every other reader will
+            # make of it, so the versions have to agree unless -Force says otherwise. A blank
+            # or non-OpenTag3D tag has nothing to disagree with and writes normally.
+            $imageVersion = $null
+            try {
+                $imagePayload = Get-OpenTag3DNdefPayload -UserMemory $image
+                $imageVersion = Get-OpenTag3DPayloadVersion -Payload $imagePayload
+            }
+            catch { Write-Verbose "Image is not an NDEF OpenTag3D record; no version check." }
+
+            if ($imageVersion) {
+                # 48 bytes covers the TLV, record header and the 21-byte type at their longest.
+                $head = Invoke-PcscApdu -Session $session -Apdu ([byte[]]@(0xFF,0xB0,0x00,0x04,0x30)) -ReceiveLength 64
+                if ($head.Success) {
+                    $start = Get-OpenTag3DPayloadStart -UserMemory $head.Data
+                    if ($null -ne $start -and $start + 2 -le $head.Data.Length) {
+                        $onTag = Get-OpenTag3DPayloadVersion -Payload $head.Data[$start..($start + 1)]
+                        $rawOnTag = ([int]$head.Data[$start] -shl 8) -bor $head.Data[$start + 1]
+                        $shown = if ($onTag) { $onTag } else { '{0}.{1:D3}' -f [math]::Floor($rawOnTag / 1000), ($rawOnTag % 1000) }
+
+                        if ($shown -ne $imageVersion) {
+                            if ($Force) {
+                                Write-Warning "Spool tag holds OpenTag3D $shown; writing $imageVersion over it because -Force was given."
+                            }
+                            else {
+                                throw "Spec version mismatch: this image is OpenTag3D $imageVersion, the spool on the reader holds OpenTag3D $shown. Nothing was written. Rebuild the image as $shown, or pass -Force to overwrite the tag with $imageVersion."
+                            }
+                        }
+                        else { Write-Verbose "Spool and image agree on OpenTag3D $shown" }
+                    }
+                    else { Write-Verbose "Tag holds no readable OpenTag3D record; no version to compare." }
+                }
+                else { Write-Verbose "Could not read page 4 for a version check (SW=$($head.SW))." }
             }
 
             # --- capability container (page 3), always written ---
