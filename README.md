@@ -35,6 +35,8 @@ needs nothing beyond PowerShell. See [Platform support](#platform-support).
 
 ## Install
 
+On Windows or Linux, clone the repository first:
+
 ```powershell
 git clone https://github.com/ccatlett1984/Polar_Filament_OpenTag3D.git
 cd Polar_Filament_OpenTag3D
@@ -42,26 +44,38 @@ cd Polar_Filament_OpenTag3D
 
 Copy the `OpenTag3d_Polar_Filament` folder into a directory on your `$env:PSModulePath`.
 The user-scoped module directory differs by platform — Windows keeps it under Documents,
-Linux and macOS under `~/.local/share`:
+while Linux keeps it under `~/.local/share`:
 
-**Windows**
+### Windows Setup
 
 ```powershell
 # Pick the line for the PowerShell you run - 7 and 5.1 keep separate module directories
+# Save the location where PowerShell expects installed modules to live.
 $dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'         # PowerShell 7
 $dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'  # Windows PowerShell 5.1
 
+# Create that folder if it does not already exist.
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
+
+# Copy the project module into that folder, effectively installing it. PowerShell can then
+# find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
 Copy-Item .\OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
 Get-ChildItem -Recurse (Join-Path $dest 'OpenTag3d_Polar_Filament') | Unblock-File
 ```
 
-**Linux and macOS** (PowerShell 7)
+### Linux Setup
+
+PowerShell 7:
 
 ```powershell
+# Save the location where PowerShell expects installed modules to live.
 $dest = Join-Path $HOME '.local/share/powershell/Modules'
 
+# Create that folder if it does not already exist.
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
+
+# Copy the project module into that folder, effectively installing it. PowerShell can then
+# find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
 Copy-Item ./OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
 ```
 
@@ -75,8 +89,59 @@ If you are unsure where your module directories are,
 `$env:PSModulePath -split [IO.Path]::PathSeparator` lists every directory the current
 session searches; the user-scoped one is the first entry.
 
-Open a new session — the module autoloads, no `Import-Module` needed. To confirm the layout
-is right:
+Open a new PowerShell session — the module autoloads, no `Import-Module` needed. To confirm
+the layout is right:
+
+```powershell
+Get-Module -ListAvailable OpenTag3d_Polar_Filament
+```
+
+The manifest must sit at `<module dir>/OpenTag3d_Polar_Filament/OpenTag3d_Polar_Filament.psd1`.
+
+### MacOS Setup
+
+Install the required dependency from Terminal:
+
+```bash
+# PowerShell 7 is the shell and runtime required to load and run this module on macOS.
+brew install powershell
+
+git clone https://github.com/ccatlett1984/Polar_Filament_OpenTag3D.git
+cd Polar_Filament_OpenTag3D
+```
+
+Start PowerShell by running `pwsh`, then install the module:
+
+```powershell
+# Run pwsh in Terminal to start PowerShell before entering the commands below.
+# Save the location where PowerShell expects installed modules to live.
+$dest = Join-Path $HOME '.local/share/powershell/Modules'
+
+# Create that folder if it does not already exist.
+New-Item -ItemType Directory -Path $dest -Force | Out-Null
+
+# Copy the project module into that folder, effectively installing it. PowerShell can then
+# find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
+Copy-Item ./OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
+```
+
+If you are unsure where your module directories are,
+`$env:PSModulePath -split [IO.Path]::PathSeparator` lists every directory the current
+session searches; the user-scoped one is the first entry.
+
+Close the current PowerShell session:
+
+```powershell
+exit
+```
+
+Back in Terminal, open a new PowerShell session:
+
+```bash
+pwsh
+```
+
+The module now autoloads, so no `Import-Module` is needed. To confirm the layout is right:
 
 ```powershell
 Get-Module -ListAvailable OpenTag3d_Polar_Filament
@@ -87,6 +152,9 @@ The manifest must sit at `<module dir>/OpenTag3d_Polar_Filament/OpenTag3d_Polar_
 ## Quick start
 
 ```powershell
+# Browser UI - also the place to build a tag for a non-Polar vendor by hand
+Show-OpenTag3DGui
+
 # Save a tag image (defaults: Extended mode, NDEF format, Downloads or ~)
 Export-OpenTag3DPayload -TagType NTAG215 -Serial 50017-FYG5
 
@@ -104,9 +172,6 @@ Read-OpenTag3DTag | Select-Object material, color_name, print_temp, serial
 
 # Decode a saved image (works on Linux and macOS too)
 Read-OpenTag3DTag -Path .\tag.bin | Select-Object -ExpandProperty Fields | Format-Table
-
-# Browser UI - also the place to build a tag for a non-Polar vendor by hand
-Show-OpenTag3DGui
 ```
 
 All parameters are name-only; nothing binds positionally.
