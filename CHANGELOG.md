@@ -16,6 +16,11 @@
   same major, so a future 2.002 tag is read with the 2.001 table rather than the 2.000 one
 - The NTAG213 refusal, the GUI's tag-type list and the Mode control now key on the major
   version rather than testing for 2.000 specifically
+- Fixed **Read tag** showing only the colour swatch and title for a 2.x tag. The results table
+  had the 1.003 group headings hard-coded, so every row of a payload grouped Display /
+  Inventory / Operational was filtered out. Group headings now come from the tag's own spec
+  version, any section the page was not told about is still shown rather than dropped, the
+  spec version appears beside the title, and the field count is stated underneath
 
 ## 1.7.0
 - **OpenTag3D 2.000 support, alongside 1.003.** The two layouts share only three addresses,

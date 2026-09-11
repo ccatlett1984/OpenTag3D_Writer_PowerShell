@@ -238,12 +238,18 @@ function Invoke-OpenTag3DGuiAction {
         try {
             $p = @{}
             if ($r.readerName) { $p.ReaderName = $r.readerName }
-            $tag = Read-OpenTag3DTag @p
+            $tag  = Read-OpenTag3DTag @p
+            # Group headings are version-specific - Core/Extended for 1.003, Display /
+            # Inventory / Operational for 2.x - so the page is told them rather than
+            # assuming a set and silently dropping every row that does not match.
+            $spec = Get-OpenTag3DSpec -SpecVersion $tag.SpecVersion
             return @{
-                ok     = $true
-                fields = @($tag.Fields | ForEach-Object { @{ name = $_.Name; value = "$($_.Value)"; section = $_.Section } })
-                color  = "$($tag.color_1)"
-                title  = (@($tag.material, $tag.material_mod, $tag.color_name) | Where-Object { $_ }) -join " $([char]0x00B7) "
+                ok          = $true
+                fields      = @($tag.Fields | ForEach-Object { @{ name = $_.Name; value = "$($_.Value)"; section = $_.Section } })
+                groups      = @($spec.GroupOrder)
+                specVersion = $tag.SpecVersion
+                color       = "$($tag.color_1)"
+                title       = (@($tag.material, $tag.material_mod, $tag.color_name) | Where-Object { $_ }) -join " $([char]0x00B7) "
             }
         }
         catch { return @{ ok = $false; message = $_.Exception.Message } }
@@ -337,6 +343,8 @@ function Get-OpenTag3DGuiHtml {
   #tag { margin-top:1.3rem; display:none; }
   #tag h2 { font-size:1rem; margin:0 0 .2rem; display:flex; align-items:center; gap:.5rem; }
   #tag .swatch { width:1rem; height:1rem; border-radius:3px; border:1px solid var(--edge); display:inline-block; }
+  #tag .ver { font-size:.72rem; font-weight:400; opacity:.55; letter-spacing:.04em;
+              text-transform:uppercase; margin-left:auto; }
   #tag table { width:100%; border-collapse:collapse; font-size:.86rem; }
   #tag th { text-align:left; font-weight:600; opacity:.55; font-size:.72rem; text-transform:uppercase;
             letter-spacing:.06em; padding:.9rem 0 .3rem; border-bottom:1px solid var(--edge); }
@@ -561,21 +569,35 @@ function Get-OpenTag3DGuiHtml {
     out.textContent = msg;
   }
 
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
   function renderTag(data) {
     const t = $('tag');
-    const sections = ['Core', 'Extended'];
+    const fields = data.fields || [];
+
+    // Headings come from the server, because they depend on the tag's spec version. Any
+    // section not in that list is still shown, appended in the order it first appears -
+    // a row must never be dropped just because the page did not expect its heading.
+    const order = (data.groups || []).slice();
+    for (const f of fields) if (!order.includes(f.section)) order.push(f.section);
+
     let html = '<h2>';
-    if (data.color) html += '<span class="swatch" style="background:' + data.color.split(' ')[0] + '"></span>';
-    html += (data.title || 'Tag contents') + '</h2><table>';
-    for (const sec of sections) {
-      const rows = (data.fields || []).filter(f => f.section === sec);
+    if (data.color) html += '<span class="swatch" style="background:' + esc(data.color.split(' ')[0]) + '"></span>';
+    html += esc(data.title || 'Tag contents');
+    if (data.specVersion) html += ' <span class="ver">OpenTag3D ' + esc(data.specVersion) + '</span>';
+    html += '</h2><table>';
+
+    for (const sec of order) {
+      const rows = fields.filter(f => f.section === sec);
       if (!rows.length) continue;
-      html += '<tr><th colspan="2">' + sec + '</th></tr>';
+      html += '<tr><th colspan="2">' + esc(sec) + '</th></tr>';
       for (const f of rows) {
-        html += '<tr><td class="k">' + f.name + '</td><td>' + f.value + '</td></tr>';
+        html += '<tr><td class="k">' + esc(f.name) + '</td><td>' + esc(f.value) + '</td></tr>';
       }
     }
-    t.innerHTML = html + '</table>';
+    html += '</table><p class="note">' + fields.length + ' field(s) read.</p>';
+    t.innerHTML = html;
     t.style.display = 'block';
   }
 

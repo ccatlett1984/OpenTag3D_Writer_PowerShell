@@ -178,7 +178,8 @@ Starts a local browser UI on `http://localhost:8787/`.
 
 The UI has two screens:
 
-- **Fetch & write** — look up a serial, save an image, write a tag, read a tag
+- **Fetch & write** — look up a serial, save an image, write a tag, read a tag. **Read tag**
+  shows every field decoded off the tag, grouped as that tag's own spec version groups them
 - **View & edit** — load data, change it, then save an image or write a tag
 
 **View & edit** starts from any of four sources:
