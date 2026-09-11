@@ -42,17 +42,11 @@ git clone https://github.com/ccatlett1984/Polar_Filament_OpenTag3D.git
 cd Polar_Filament_OpenTag3D
 ```
 
-Copy the `OpenTag3d_Polar_Filament` folder into a directory on your `$env:PSModulePath`.
-The user-scoped module directory differs by platform — Windows keeps it under Documents,
-while Linux keeps it under `~/.local/share`:
-
 ### Windows Setup
 
 ```powershell
-# Pick the line for the PowerShell you run - 7 and 5.1 keep separate module directories
 # Save the location where PowerShell expects installed modules to live.
 $dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'         # PowerShell 7
-$dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'  # Windows PowerShell 5.1
 
 # Create that folder if it does not already exist.
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
@@ -76,14 +70,16 @@ sudo apt install pcscd libpcsclite1 libccid
 
 # Start the smart-card service now and automatically after future restarts.
 sudo systemctl enable --now pcscd
+
+#you may need to disable the native linux NFC driver in your distro, run this line if pcscd says it can't access the reader.
+echo -e "blacklist pn533_usb\nblacklist pn533\nblacklist nfc" | sudo tee /etc/modprobe.d/blacklist-nfc.conf
 ```
 
 On other Linux distributions, use that distribution's package manager to install the
 equivalent PC/SC service, pcsc-lite library, and CCID reader-driver packages; package names
 and service-management commands may differ.
 
-Then run the following in PowerShell 7:
-
+Start PowerShell by running `pwsh`, then install the module:
 ```powershell
 # Save the location where PowerShell expects installed modules to live.
 $dest = Join-Path $HOME '.local/share/powershell/Modules'
