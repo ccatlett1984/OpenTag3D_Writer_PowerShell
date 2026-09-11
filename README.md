@@ -65,7 +65,24 @@ Get-ChildItem -Recurse (Join-Path $dest 'OpenTag3d_Polar_Filament') | Unblock-Fi
 
 ### Linux Setup
 
-PowerShell 7:
+Reading or writing physical tags on Linux requires a PC/SC service, library, and reader
+driver. On Debian, install them with:
+
+```bash
+# pcscd runs the smart-card service, libpcsclite1 lets the module communicate with that
+# service, and libccid provides the driver used by USB readers such as the ACR122U.
+sudo apt update
+sudo apt install pcscd libpcsclite1 libccid
+
+# Start the smart-card service now and automatically after future restarts.
+sudo systemctl enable --now pcscd
+```
+
+On other Linux distributions, use that distribution's package manager to install the
+equivalent PC/SC service, pcsc-lite library, and CCID reader-driver packages; package names
+and service-management commands may differ.
+
+Then run the following in PowerShell 7:
 
 ```powershell
 # Save the location where PowerShell expects installed modules to live.
@@ -78,25 +95,6 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 # find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
 Copy-Item ./OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
 ```
-
-`Documents` is a Windows-only convention; PowerShell does not look there on Linux or macOS.
-`Unblock-File` is Windows-only too — it clears the mark-of-the-web and does not exist
-elsewhere. Create `$dest` before copying: if it does not exist, `Copy-Item` treats it as the
-destination *name* and unpacks the module's contents straight into `Modules\`, which does
-not autoload.
-
-If you are unsure where your module directories are,
-`$env:PSModulePath -split [IO.Path]::PathSeparator` lists every directory the current
-session searches; the user-scoped one is the first entry.
-
-Open a new PowerShell session — the module autoloads, no `Import-Module` needed. To confirm
-the layout is right:
-
-```powershell
-Get-Module -ListAvailable OpenTag3d_Polar_Filament
-```
-
-The manifest must sit at `<module dir>/OpenTag3d_Polar_Filament/OpenTag3d_Polar_Filament.psd1`.
 
 ### MacOS Setup
 
@@ -124,30 +122,6 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 # find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
 Copy-Item ./OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
 ```
-
-If you are unsure where your module directories are,
-`$env:PSModulePath -split [IO.Path]::PathSeparator` lists every directory the current
-session searches; the user-scoped one is the first entry.
-
-Close the current PowerShell session:
-
-```powershell
-exit
-```
-
-Back in Terminal, open a new PowerShell session:
-
-```bash
-pwsh
-```
-
-The module now autoloads, so no `Import-Module` is needed. To confirm the layout is right:
-
-```powershell
-Get-Module -ListAvailable OpenTag3d_Polar_Filament
-```
-
-The manifest must sit at `<module dir>/OpenTag3d_Polar_Filament/OpenTag3d_Polar_Filament.psd1`.
 
 ## Quick start
 
