@@ -1,7 +1,7 @@
 ﻿function Export-OpenTag3DPayload {
 <#
 .SYNOPSIS
-    Builds a full NTAG21x memory image from a Polar Filament OpenTag3D spool lookup.
+    Builds a full NTAG21x memory image from an OpenTag3D spool lookup.
 
 .DESCRIPTION
     Fetches the OpenTag3D payload for a spool serial and wraps it in a complete tag dump:

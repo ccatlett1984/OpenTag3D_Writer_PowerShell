@@ -1,12 +1,13 @@
 # OpenTag3D RFID Writer
 
-A PowerShell module for working with [OpenTag3D](https://opentag3d.info) NFC tags on
-filament spools. It looks up spool data by serial (currently only supported by Polar Filament, 
-builds NTAG21x tag images, reads and decodes existing tags, and writes tags through a PC/SC reader
-such as the ACR122U. Tags for any other vendor can be filled in by hand in the browser UI, which is
+A PowerShell module for working with [OpenTag3D](https://opentag3d.info) NFC tags on filament
+spools. It looks up spool data by serial (currently only supported by Polar Filament), builds
+NTAG21x tag images, reads and decodes existing tags, and writes tags through a PC/SC reader such
+as the ACR122U. Tags for any other vendor can be filled in by hand in the browser UI, which is
 also there for anyone who would rather not use the console.
 
-Not affiliated with Polar Filament. 
+Not affiliated with Polar Filament.
+
 I am affiliated with the OpenTag3D project.
 
 ## What it does
@@ -39,8 +40,8 @@ needs nothing beyond PowerShell. See [Platform support](#platform-support).
 On Windows or Linux, clone the repository first:
 
 ```powershell
-git clone https://github.com/ccatlett1984/Polar_Filament_OpenTag3D.git
-cd Polar_Filament_OpenTag3D
+git clone https://github.com/ccatlett1984/OpenTag3d_Writer_PowerShell.git
+cd OpenTag3d_Writer_PowerShell
 ```
 
 ### Windows Setup
@@ -62,8 +63,8 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
 # Copy the project module into that folder, effectively installing it. PowerShell can then
 # find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
-Copy-Item .\OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
-Get-ChildItem -Recurse (Join-Path $dest 'OpenTag3d_Polar_Filament') | Unblock-File
+Copy-Item .\OpenTag3DWriter -Destination $dest -Recurse -Force
+Get-ChildItem -Recurse (Join-Path $dest 'OpenTag3DWriter') | Unblock-File
 ```
 
 ### Linux Setup
@@ -98,7 +99,7 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
 # Copy the project module into that folder, effectively installing it. PowerShell can then
 # find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
-Copy-Item ./OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
+Copy-Item ./OpenTag3DWriter -Destination $dest -Recurse -Force
 ```
 
 ### MacOS Setup
@@ -109,8 +110,8 @@ Install the required dependency from Terminal:
 # PowerShell 7 is the shell and runtime required to load and run this module on macOS.
 brew install powershell
 
-git clone https://github.com/ccatlett1984/Polar_Filament_OpenTag3D.git
-cd Polar_Filament_OpenTag3D
+git clone https://github.com/ccatlett1984/OpenTag3d_Writer_PowerShell.git
+cd OpenTag3d_Writer_PowerShell
 ```
 
 Start PowerShell by running `pwsh`, then install the module:
@@ -125,7 +126,7 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
 # Copy the project module into that folder, effectively installing it. PowerShell can then
 # find commands such as Show-OpenTag3DGui and Read-OpenTag3DTag from any folder.
-Copy-Item ./OpenTag3d_Polar_Filament -Destination $dest -Recurse -Force
+Copy-Item ./OpenTag3DWriter -Destination $dest -Recurse -Force
 ```
 
 ## Quick start

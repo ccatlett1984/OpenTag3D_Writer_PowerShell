@@ -1,6 +1,11 @@
 # Changelog
 
-## 1.8.0
+## 2.0.0
+- **The module is now `OpenTag3DWriter`**, renamed from `OpenTag3d_Polar_Filament` along with
+  the repository. The folder, both manifest files, `RootModule` and `ProjectUri` all follow;
+  the browser UI is titled "OpenTag3D RFID Writer" rather than naming a vendor. Breaking for
+  anyone who installed the old name - the two sit side by side on `$env:PSModulePath` until
+  the old folder is removed. Command names are unchanged
 - **OpenTag3D 2.001 support**, and it is now the default for new tags. 2.001 is 2.000 with one
   correction: `mfi_value` loses its scaling of 10 and reads as plain `g/min` rather than
   `g/10min`. The stored byte is unchanged - a raw `63` is `630 g/10min` under 2.000 and

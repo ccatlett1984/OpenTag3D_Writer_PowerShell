@@ -322,7 +322,7 @@ function Get-OpenTag3DGuiHtml {
     $page = @'
 <!doctype html>
 <meta charset="utf-8">
-<title>OpenTag3D - Polar Filament</title>
+<title>OpenTag3D RFID Writer</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -408,7 +408,7 @@ function Get-OpenTag3DGuiHtml {
   #confirm .actions { margin-top:.8rem; }
 </style>
 
-<h1>OpenTag3D &mdash; Polar Filament</h1>
+<h1>OpenTag3D RFID Writer</h1>
 <p class="sub">Look up a spool or build a tag by hand, then save an image or write a tag.</p>
 
 <nav class="tabs">

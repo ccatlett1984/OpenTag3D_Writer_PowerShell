@@ -11,3 +11,6 @@ TestResults.xml
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Files delivered from Claude sessions
+Claude outputs/
