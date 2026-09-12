@@ -40,8 +40,8 @@ needs nothing beyond PowerShell. See [Platform support](#platform-support).
 On Windows or Linux, clone the repository first:
 
 ```powershell
-git clone https://github.com/ccatlett1984/OpenTag3d_Writer_PowerShell.git
-cd OpenTag3d_Writer_PowerShell
+git clone https://github.com/ccatlett1984/OpenTag3D_Writer_PowerShell.git
+cd OpenTag3D_Writer_PowerShell
 ```
 
 ### Windows Setup
@@ -110,8 +110,8 @@ Install the required dependency from Terminal:
 # PowerShell 7 is the shell and runtime required to load and run this module on macOS.
 brew install powershell
 
-git clone https://github.com/ccatlett1984/OpenTag3d_Writer_PowerShell.git
-cd OpenTag3d_Writer_PowerShell
+git clone https://github.com/ccatlett1984/OpenTag3D_Writer_PowerShell.git
+cd OpenTag3D_Writer_PowerShell
 ```
 
 Start PowerShell by running `pwsh`, then install the module:

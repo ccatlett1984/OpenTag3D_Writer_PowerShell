@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1
+- `ProjectUri` in the manifest corrected to the repository's canonical capitalisation,
+  `OpenTag3D_Writer_PowerShell`. GitHub redirects either way, so nothing was broken
+- The publish workflow now refuses to publish when the release tag and `ModuleVersion`
+  disagree, and runs `Test-ModuleManifest` first. "2.0" and "2.0.0" still count as the same
+  release, and a leading "v" or a prerelease suffix is tolerated
+
 ## 2.0.0
 - **The module is now `OpenTag3DWriter`**, renamed from `OpenTag3d_Polar_Filament` along with
   the repository. The folder, both manifest files, `RootModule` and `ProjectUri` all follow;

@@ -12,7 +12,7 @@
 RootModule = 'OpenTag3DWriter.psm1'
 
 # Version number of this module.
-ModuleVersion = '2.0.0'
+ModuleVersion = '2.0.1'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -102,7 +102,7 @@ PrivateData = @{
         # LicenseUri = ''
 
         # A URL to the main website for this project.
-        ProjectUri = 'https://github.com/ccatlett1984/OpenTag3d_Writer_PowerShell'
+        ProjectUri = 'https://github.com/ccatlett1984/OpenTag3D_Writer_PowerShell'
 
         # A URL to an icon representing this module.
         # IconUri = ''
