@@ -126,13 +126,24 @@
             catch { Write-Verbose "Image is not an NDEF OpenTag3D record; no version check." }
 
             if ($imageVersion) {
-                # 48 bytes covers the TLV, record header and the 21-byte type at their longest.
-                $head = Invoke-PcscApdu -Session $session -Apdu ([byte[]]@(0xFF,0xB0,0x00,0x04,0x30)) -ReceiveLength 64
-                if ($head.Success) {
-                    $start = Get-OpenTag3DPayloadStart -UserMemory $head.Data
-                    if ($null -ne $start -and $start + 2 -le $head.Data.Length) {
-                        $onTag = Get-OpenTag3DPayloadVersion -Payload $head.Data[$start..($start + 1)]
-                        $rawOnTag = ([int]$head.Data[$start] -shl 8) -bor $head.Data[$start + 1]
+                # Read in 48-byte steps until the opentag3d record's payload is in view. One
+                # step covers the TLV, record header and 21-byte type; more is needed when
+                # another record - a URI for a product page, say - comes first.
+                $head  = [byte[]]@()
+                $start = $null
+                for ($chunk = 0; $chunk -lt 3; $chunk++) {
+                    $page = 4 + ($chunk * 12)
+                    $r    = Invoke-PcscApdu -Session $session -Apdu ([byte[]]@(0xFF,0xB0,0x00,[byte]$page,0x30)) -ReceiveLength 64
+                    if (-not $r.Success) { Write-Verbose "Could not read page $page for a version check (SW=$($r.SW))."; break }
+                    $head  = $head + $r.Data
+                    $start = Get-OpenTag3DPayloadStart -UserMemory $head
+                    if ($null -ne $start -and $start + 2 -le $head.Length) { break }
+                }
+
+                if ($head.Length) {
+                    if ($null -ne $start -and $start + 2 -le $head.Length) {
+                        $onTag = Get-OpenTag3DPayloadVersion -Payload $head[$start..($start + 1)]
+                        $rawOnTag = ([int]$head[$start] -shl 8) -bor $head[$start + 1]
                         $shown = if ($onTag) { $onTag } else { '{0}.{1:D3}' -f [math]::Floor($rawOnTag / 1000), ($rawOnTag % 1000) }
 
                         if ($shown -ne $imageVersion) {
@@ -147,7 +158,6 @@
                     }
                     else { Write-Verbose "Tag holds no readable OpenTag3D record; no version to compare." }
                 }
-                else { Write-Verbose "Could not read page 4 for a version check (SW=$($head.SW))." }
             }
 
             # --- capability container (page 3), always written ---

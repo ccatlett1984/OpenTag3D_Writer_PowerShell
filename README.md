@@ -26,7 +26,7 @@ Not affiliated with Polar Filament or the OpenTag3D project.
 
 | | |
 |---|---|
-| PowerShell | 5.1 (Windows) or 7+ (any platform) |
+| PowerShell | 7 or later, on Windows, Linux and macOS |
 | Reading/writing tags | A PC/SC reader — developed against an ACR122U |
 | PC/SC service | Windows: Smart Card service. Linux: `pcscd` + `libpcsclite1` + `libccid`. macOS: built in |
 
@@ -44,9 +44,17 @@ cd Polar_Filament_OpenTag3D
 
 ### Windows Setup
 
+Windows ships with Windows PowerShell 5.1, which this module does not support. Install
+PowerShell 7 first, then use `pwsh` rather than `powershell`:
+
 ```powershell
-# Save the location where PowerShell expects installed modules to live.
-$dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'         # PowerShell 7
+winget install Microsoft.PowerShell
+```
+
+```powershell
+# Save the location where PowerShell 7 expects installed modules to live.
+# (Windows PowerShell 5.1 keeps its modules elsewhere and is not supported.)
+$dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'
 
 # Create that folder if it does not already exist.
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
@@ -198,7 +206,8 @@ Every spec field is a property (`material`, `color_name`, `print_temp`, `serial`
 plus a `Fields` collection for display and a `SpecVersion` saying which layout was read.
 
 There is no version parameter: a payload declares its own at `0x00`, so the field table is
-chosen from the bytes. A tag written to either spec reads correctly without being told which.
+chosen from the bytes. A tag written to any of the three reads correctly without being told
+which.
 
 ### `Show-OpenTag3DGui`
 
@@ -226,9 +235,10 @@ The UI has two screens:
 | **New tag** | A blank form — every spec field editable, no lookup involved |
 | **Load** (under Saved profile) | Field values you saved earlier |
 
-Whichever source you start from, the editor is the same: fields grouped Core and Extended,
-per-field validation on save, a colour picker on each colour field, and **Save image** /
-**Write to tag** at the bottom. The last two sources are covered in
+Whichever source you start from, the editor is the same: fields grouped the way that
+payload's spec version groups them — Core and Extended for 1.003, Display / Inventory /
+Operational for 2.x — per-field validation on save, a colour picker on each colour field, and
+**Save image** / **Write to tag** at the bottom. The last two sources are covered in
 [Generic vendor tags](#generic-vendor-tags).
 
 The page sends a heartbeat every three seconds. Once the first one arrives, the server
@@ -292,14 +302,14 @@ disagree with and writes normally. `-Force` writes anyway, warning as it goes.
 ### Converting between versions
 
 The lookup service decides its own version, so `Export-OpenTag3DPayload` passes its payload
-through untouched unless `-SpecVersion` asks for the other one. Conversion matches fields by
-id, not address — the two layouts share almost no addresses — and carries values across in
-real-world units, so `tolerance` converts properly between 1.003's micrometres and 2.000's
-hundredths of a millimetre.
+through untouched unless `-SpecVersion` asks for a different one. Conversion matches fields
+by id, not address — 1.003 and the 2.x layouts share almost no addresses — and carries values
+across in real-world units, so `tolerance` converts properly between 1.003's micrometres and
+2.x's hundredths of a millimetre, and `mfi_value` between 2.000's g/10min and 2.001's g/min.
 
-Anything that cannot carry across is dropped with a warning rather than mangled: 2.000's four
+Anything that cannot carry across is dropped with a warning rather than mangled: 2.x's four
 new fields have no home in 1.003, and a value too wide for a narrower field (1.003's two-byte
-`td` into 2.000's one byte) is reported instead of truncated.
+`td` into 2.x's one byte) is reported instead of truncated.
 
 ```powershell
 # Whatever the service serves, unchanged
@@ -316,7 +326,7 @@ refill, a spool you wound yourself — open **View & edit** and press **New tag*
 field starts blank and editable, and **Save image** or **Write to tag** finishes the job
 exactly as it does for a looked-up spool.
 
-![View & edit, mid-way through a hand-built 2.000 tag](docs/gui-view-edit.png)
+![View & edit, mid-way through a hand-built 2.001 tag](docs/gui-view-edit.png)
 
 Two things differ from an edited Polar payload:
 
@@ -330,11 +340,11 @@ no need to fill in fields you do not have. Colour fields have a picker beside th
 **clear** returns a colour to unused.
 
 **Spec version** picks the layout — see [Spec versions](#spec-versions). It opens on 2.001.
-The form follows it: 2.000 shows 40 fields grouped Display / Inventory / Operational, 1.003
+The form follows it: 2.x shows 40 fields grouped Display / Inventory / Operational, 1.003
 shows 36 grouped Core / Extended. Saved images name the version they hold, so
-`ACME-0001-NTAG215-Generic-2.000-Ndef.bin` is unambiguous a month later.
+`ACME-0001-NTAG215-Generic-2.001-Ndef.bin` is unambiguous a month later.
 
-**Mode** is a 1.003 concept and greys out for 2.000. Core is `0x00-0x6F` (112 bytes), Extended
+**Mode** is a 1.003 concept and greys out for 2.x. Core is `0x00-0x6F` (112 bytes), Extended
 adds `0x70-0xBA` (187 bytes). Left on *Default for tag type* it follows the chip — Core for
 NTAG213, Extended otherwise. Choosing NTAG213 for an Extended payload asks before dropping the
 extended fields, and lists what survives.
@@ -398,21 +408,28 @@ By default the payload is wrapped as an NDEF message — an `application/opentag
 record inside an NDEF TLV — so readers report the tag as NFC Forum Type 2 with a readable
 record. `-Format Raw` writes the bare payload at page 4 instead.
 
+Reading takes **the first record in the message whose type is `application/opentag3d`**, as
+the spec requires — not simply the first record. A tag may carry a URI record ahead of it so
+a phone opens a product page, and that tag still reads. TLVs before the NDEF one (NULL
+padding, lock control, memory control) are stepped over, and a record's ID field is skipped
+properly when one is present. Chunked records are reported rather than half-read.
+
 How much of that user memory a payload needs depends on the spec version:
 
 | Payload | Bytes | Fits |
 |---|---|---|
 | 1.003 Core (`0x00–0x6F`) | 112 | any NTAG21x |
 | 1.003 Extended (`0x00–0xBA`) | 187 | NTAG215, NTAG216 |
-| 2.000 (`0x00–0xD7`) | 216 | NTAG215, NTAG216 |
+| 2.000 and 2.001 (`0x00–0xD7`) | 216 | NTAG215, NTAG216 |
 
 Add roughly 27 bytes of NDEF framing to each — record header, the 21-byte
 `application/opentag3d` type, the TLV and its terminator.
 
 An NTAG213 holds only the 1.003 Core block, so asking for Extended on one falls back to Core
 with a warning, and the edit screen lists exactly which fields survive before writing.
-**2.000 cannot go on an NTAG213 at all** — 216 bytes plus framing against 144 bytes of user
-memory — which is why the chip disappears from the tag-type list when 2.000 is selected.
+**A 2.x payload cannot go on an NTAG213 at all** — 216 bytes plus framing against 144 bytes
+of user memory — which is why the chip disappears from the tag-type list whenever 2.000 or
+2.001 is selected.
 
 ## Platform support
 
@@ -468,22 +485,6 @@ Three methods are tried in order:
 
 `-Verbose` reports which method identified the chip.
 
-### Linux setup
-
-```bash
-sudo apt install pcscd libpcsclite1 libccid    # or the equivalent for your distro
-sudo systemctl enable --now pcscd
-```
-
-The kernel NFC modules claim an ACR122U on plug-in and pcscd then cannot see it. Blacklist
-them:
-
-```bash
-echo -e 'blacklist pn533_usb\nblacklist nfc' | sudo tee /etc/modprobe.d/blacklist-nfc.conf
-```
-
-then unplug and replug the reader.
-
 ## Troubleshooting
 
 **`Failed to listen on prefix ... conflicts with an existing registration`**
@@ -521,13 +522,13 @@ first reader matching `ACR122` is used automatically.
 **`Could not identify the tag as NTAG213, NTAG215 or NTAG216`**
 Re-run with `-Verbose` to see what each identification method returned. If every method
 reports `SW=6A81` or similar, the reader is passing APDUs through but the tag is not
-responding: reseat it, and on Linux confirm the kernel NFC modules are blacklisted (above)
-so pcscd owns the reader outright.
+responding: reseat it, and on Linux confirm the kernel NFC modules are blacklisted (see
+[Linux Setup](#linux-setup)) so pcscd owns the reader outright.
 
 **`No readers available` / `The PC/SC service is not running`**
 On Windows, start the Smart Card service. On Linux, start `pcscd` and check the reader is
 visible with `pcsc_scan`. If the reader is plugged in but invisible, blacklist the kernel
-NFC modules as above.
+NFC modules — see [Linux Setup](#linux-setup).
 
 **`Access denied by the PC/SC service` (Linux)**
 polkit is refusing the client. Add your user to the pcscd policy, or run
@@ -542,6 +543,11 @@ make of it. Nothing was written. Rebuild the image at the spool's version — `-
 **`OpenTag3D 2.x cannot be written to an NTAG213`**
 A 2.x layout is 216 bytes; with NDEF framing that is 243 against an NTAG213's 144 bytes of
 user memory. The spec dropped the chip. Use an NTAG215 or NTAG216, or build the tag as 1.003.
+
+**`No application/opentag3d record in the tag's NDEF message`**
+The tag holds a valid NDEF message, but none of its records carry the OpenTag3D type. The
+message's record types are listed in the error. Every record is checked, so this means the
+payload genuinely is not there.
 
 **`this module has field tables for ... only`**
 The tag declares a major version no table covers. Check what `Read-OpenTag3DTag -Verbose`

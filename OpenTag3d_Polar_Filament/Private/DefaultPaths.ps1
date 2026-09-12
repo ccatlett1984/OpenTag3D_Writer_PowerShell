@@ -16,7 +16,7 @@
 
     $candidate = $null
 
-    if ($PSVersionTable.PSVersion.Major -lt 6 -or $IsWindows) {
+    if ($IsWindows) {
         try {
             $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
             $guid = '{374DE290-123F-4565-9164-39C4925E467B}'   # FOLDERID_Downloads

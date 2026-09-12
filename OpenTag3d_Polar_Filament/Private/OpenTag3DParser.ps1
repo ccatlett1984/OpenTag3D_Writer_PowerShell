@@ -27,9 +27,10 @@ $script:OpenTag3DDefaultSpecVersion = '2.001'
 # what the lookup keys on; the tag version describes the format, not the filament.
 $script:OpenTag3DReadOnly = @('tag_version','serial')
 
-# Unit strings are built from char codes rather than written literally: Windows PowerShell 5.1
-# reads BOM-less .ps1 files using the ANSI codepage, which turns a literal UTF-8 degree sign
-# into 'A-circumflex degree'. Escapes keep this file pure ASCII and render correctly anywhere.
+# Unit strings are built from char codes rather than written literally. The original reason
+# was Windows PowerShell 5.1, which read BOM-less .ps1 files in the ANSI codepage and turned a
+# literal UTF-8 degree sign into 'A-circumflex degree'; 5.1 is no longer supported, but keeping
+# these files pure ASCII still saves any argument about editor and terminal encodings.
 $script:Deg  = "$([char]0x00B0)C"        # degrees Celsius
 $script:Um   = "$([char]0x00B5)m"        # micrometres
 $script:Cm3  = "g/cm$([char]0x00B3)"     # grams per cubic centimetre
@@ -275,10 +276,122 @@ function Get-OpenTag3DPayloadVersion {
     return $sameMajor[0]
 }
 
+function Get-OpenTag3DNdefMessage {
+    <#
+    .SYNOPSIS
+        Locates the NDEF message inside tag user memory.
+    .DESCRIPTION
+        User memory is a sequence of TLVs, not necessarily one NDEF TLV at page 4: NULL TLVs
+        pad, and lock-control and memory-control TLVs legitimately come first. This walks them
+        and returns where the NDEF message (TLV type 0x03) starts and how long it is.
+
+        Returns $null if there is no NDEF TLV.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [byte[]]$UserMemory)
+
+    $i = 0
+    while ($i -lt $UserMemory.Length) {
+        $t = $UserMemory[$i]
+
+        if ($t -eq 0x00) { $i++; continue }          # NULL TLV: one byte, no length
+        if ($t -eq 0xFE) { return $null }            # terminator reached first
+
+        if ($i + 1 -ge $UserMemory.Length) { return $null }
+
+        if ($UserMemory[$i + 1] -eq 0xFF) {          # three-byte length
+            if ($i + 3 -ge $UserMemory.Length) { return $null }
+            $len   = ([int]$UserMemory[$i + 2] -shl 8) -bor $UserMemory[$i + 3]
+            $value = $i + 4
+        }
+        else {
+            $len   = [int]$UserMemory[$i + 1]
+            $value = $i + 2
+        }
+
+        if ($t -eq 0x03) { return @{ Start = $value; Length = $len } }
+
+        $i = $value + $len                           # some other TLV - step over it
+    }
+    return $null
+}
+
+function Get-OpenTag3DNdefRecord {
+    <#
+    .SYNOPSIS
+        Walks the records of an NDEF message, emitting one object per record.
+    .DESCRIPTION
+        Each record reports its TNF, type, where its payload starts in the buffer, how long
+        that payload is, and whether it is chunked. Nothing is validated against the buffer's
+        end - a caller reading only the first few pages off a tag gets the records that fit
+        and the walk stops, rather than throwing.
+
+        The ID field is stepped over as well as the ID length byte, which is what makes a
+        third-party record carrying an ID parse at the right offset.
+    .PARAMETER Start
+        Offset of the first record. Defaults to the start of the buffer.
+    .PARAMETER Length
+        Bytes of message to walk. Defaults to the rest of the buffer.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [byte[]]$Buffer,
+        [Parameter()] [int]$Start = 0,
+        [Parameter()] [int]$Length = -1
+    )
+
+    $end = if ($Length -ge 0) { [Math]::Min($Start + $Length, $Buffer.Length) } else { $Buffer.Length }
+    $i   = $Start
+
+    while ($i -lt $end) {
+        $flags = $Buffer[$i]
+        $j     = $i + 1
+        if ($j -ge $end) { break }
+
+        $typeLen = [int]$Buffer[$j]; $j++
+
+        if (($flags -band 0x10) -ne 0) {             # SR: one-byte payload length
+            if ($j -ge $end) { break }
+            $payLen = [int]$Buffer[$j]; $j++
+        }
+        else {
+            if ($j + 3 -ge $end) { break }
+            $payLen = ([int]$Buffer[$j] -shl 24) -bor ([int]$Buffer[$j+1] -shl 16) -bor
+                      ([int]$Buffer[$j+2] -shl 8)  -bor  [int]$Buffer[$j+3]
+            $j += 4
+        }
+
+        $idLen = 0
+        if (($flags -band 0x08) -ne 0) {             # IL: an ID length byte, then the ID itself
+            if ($j -ge $end) { break }
+            $idLen = [int]$Buffer[$j]; $j++
+        }
+
+        if ($j + $typeLen -gt $end) { break }
+        $type = if ($typeLen -gt 0) { [Text.Encoding]::ASCII.GetString($Buffer[$j..($j + $typeLen - 1)]) } else { '' }
+        $j += $typeLen + $idLen
+
+        [pscustomobject]@{
+            Tnf           = $flags -band 0x07
+            Type          = $type
+            PayloadStart  = $j
+            PayloadLength = $payLen
+            Chunked       = (($flags -band 0x20) -ne 0)
+        }
+
+        $i = $j + $payLen
+        if (($flags -band 0x40) -ne 0) { break }     # ME: last record of the message
+    }
+}
+
 function Get-OpenTag3DNdefPayload {
     <#
     .SYNOPSIS
         Extracts the application/opentag3d payload from tag user memory.
+    .DESCRIPTION
+        Per the spec, the payload is the first record in the message whose type is
+        application/opentag3d - not necessarily the first record. A tag may carry a URI
+        record ahead of it so a phone opens a product page, and that tag is still valid.
     .PARAMETER UserMemory
         Bytes starting at page 4 (the NDEF TLV), or a full 180/540/924-byte tag image.
     #>
@@ -291,44 +404,33 @@ function Get-OpenTag3DNdefPayload {
     }
 
     if ($UserMemory.Length -lt 4) { throw "Not enough data to contain an NDEF message." }
-    if ($UserMemory[0] -ne 0x03) {
-        throw ("No NDEF TLV at page 4 (found 0x{0:X2}). The tag may be unformatted, or hold raw data rather than NDEF." -f $UserMemory[0])
+
+    $msg = Get-OpenTag3DNdefMessage -UserMemory $UserMemory
+    if (-not $msg) {
+        throw ("No NDEF TLV in user memory (page 4 starts 0x{0:X2}). The tag may be unformatted, or hold raw data rather than NDEF." -f $UserMemory[0])
+    }
+    if ($msg.Start + $msg.Length -gt $UserMemory.Length) {
+        throw "NDEF message length ($($msg.Length)) runs past the end of user memory."
     }
 
-    # TLV length: one byte, or 0xFF followed by two bytes.
-    if ($UserMemory[1] -eq 0xFF) {
-        $msgLen = ([int]$UserMemory[2] -shl 8) -bor $UserMemory[3]
-        $i = 4
+    $seen = [System.Collections.Generic.List[string]]::new()
+    foreach ($rec in Get-OpenTag3DNdefRecord -Buffer $UserMemory -Start $msg.Start -Length $msg.Length) {
+        if ($rec.Tnf -eq 0x02 -and $rec.Type -eq 'application/opentag3d') {
+            if ($rec.Chunked) {
+                throw "The application/opentag3d record is chunked, which this module does not read. Rewrite the tag as a single record."
+            }
+            if ($rec.PayloadStart + $rec.PayloadLength -gt $UserMemory.Length) {
+                throw "Record payload runs past the end of user memory."
+            }
+            if ($rec.PayloadLength -le 0) { throw "The application/opentag3d record is empty." }
+            Write-Verbose "application/opentag3d record at offset $($rec.PayloadStart), $($rec.PayloadLength) bytes"
+            return ,[byte[]]$UserMemory[$rec.PayloadStart..($rec.PayloadStart + $rec.PayloadLength - 1)]
+        }
+        $seen.Add($(if ($rec.Type) { "TNF $($rec.Tnf) '$($rec.Type)'" } else { "TNF $($rec.Tnf)" }))
     }
-    else {
-        $msgLen = $UserMemory[1]
-        $i = 2
-    }
-    if ($i + $msgLen -gt $UserMemory.Length) { throw "NDEF message length ($msgLen) runs past the end of user memory." }
 
-    # NDEF record: flags, type length, payload length, type, payload.
-    $flags   = $UserMemory[$i]
-    $tnf     = $flags -band 0x07
-    $short   = ($flags -band 0x10) -ne 0
-    $typeLen = $UserMemory[$i + 1]
-    $j = $i + 2
-
-    if ($short) { $payLen = $UserMemory[$j]; $j += 1 }
-    else {
-        $payLen = ([int]$UserMemory[$j] -shl 24) -bor ([int]$UserMemory[$j+1] -shl 16) -bor ([int]$UserMemory[$j+2] -shl 8) -bor $UserMemory[$j+3]
-        $j += 4
-    }
-    if (($flags -band 0x08) -ne 0) { $j += 1 }   # ID length present
-
-    $type = [Text.Encoding]::ASCII.GetString($UserMemory[$j..($j + $typeLen - 1)])
-    $j += $typeLen
-
-    if ($tnf -ne 0x02 -or $type -ne 'application/opentag3d') {
-        throw "Tag holds an NDEF record of type '$type', not application/opentag3d."
-    }
-    if ($j + $payLen -gt $UserMemory.Length) { throw "Record payload runs past the end of user memory." }
-
-    return ,[byte[]]$UserMemory[$j..($j + $payLen - 1)]
+    $found = if ($seen.Count) { "Records present: $($seen -join ', ')." } else { 'The message holds no records.' }
+    throw "No application/opentag3d record in the tag's NDEF message. $found"
 }
 
 function ConvertFrom-OpenTag3DPayload {

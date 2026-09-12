@@ -40,34 +40,30 @@ function New-OpenTag3DNdefRecord {
 function Get-OpenTag3DPayloadStart {
     <#
     .SYNOPSIS
-        Offset of the payload within user memory, from the NDEF TLV and record headers.
+        Offset of the application/opentag3d payload within user memory.
     .DESCRIPTION
         Get-OpenTag3DNdefPayload needs the whole message; this needs only the headers, so a
         few pages read off a tag are enough to find the version bytes without pulling the
-        entire payload back. Returns $null if the headers are not an application/opentag3d
-        record, or if the bytes given stop before the headers end.
+        entire payload back. Like the full reader it takes the first application/opentag3d
+        record rather than assuming the first record is the right one.
+
+        Returns $null when the bytes given stop before that record's header ends, or when the
+        message holds no such record - the caller decides whether that is worth reporting.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)] [byte[]]$UserMemory)
 
-    if ($UserMemory.Length -lt 4 -or $UserMemory[0] -ne 0x03) { return $null }
+    $msg = Get-OpenTag3DNdefMessage -UserMemory $UserMemory
+    if (-not $msg) { return $null }
 
-    $i = if ($UserMemory[1] -eq 0xFF) { 4 } else { 2 }        # TLV length: 1 byte, or 0xFF + 2
-    if ($i + 2 -gt $UserMemory.Length) { return $null }
-
-    $flags   = $UserMemory[$i]
-    $short   = ($flags -band 0x10) -ne 0
-    $typeLen = $UserMemory[$i + 1]
-    $j = $i + 2
-
-    $j += if ($short) { 1 } else { 4 }                        # payload length field
-    if (($flags -band 0x08) -ne 0) { $j += 1 }                # ID length present
-    if ($j + $typeLen -gt $UserMemory.Length) { return $null }
-
-    $type = [Text.Encoding]::ASCII.GetString($UserMemory[$j..($j + $typeLen - 1)])
-    if ($type -ne 'application/opentag3d') { return $null }
-
-    return $j + $typeLen
+    # Walk to the end of what was read rather than the message's declared length: the point
+    # of this function is to work on a partial read.
+    foreach ($rec in Get-OpenTag3DNdefRecord -Buffer $UserMemory -Start $msg.Start) {
+        if ($rec.Tnf -eq 0x02 -and $rec.Type -eq 'application/opentag3d' -and -not $rec.Chunked) {
+            return $rec.PayloadStart
+        }
+    }
+    return $null
 }
 
 function Get-OpenTag3DRecordPayload {

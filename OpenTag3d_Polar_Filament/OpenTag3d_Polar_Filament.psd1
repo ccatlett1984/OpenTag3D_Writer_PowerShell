@@ -33,7 +33,7 @@ Copyright = '(c) Chris. All rights reserved.'
 Description = 'Builds NTAG21x memory images from Polar Filament OpenTag3D spool lookups, writes them via PC/SC readers, and provides a local browser UI.'
 
 # Minimum version of the PowerShell engine required by this module
-PowerShellVersion = '5.1'
+PowerShellVersion = '7.0'
 
 # Name of the PowerShell host required by this module
 # PowerShellHostName = ''

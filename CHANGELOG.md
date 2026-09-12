@@ -16,6 +16,18 @@
   same major, so a future 2.002 tag is read with the 2.001 table rather than the 2.000 one
 - The NTAG213 refusal, the GUI's tag-type list and the Mode control now key on the major
   version rather than testing for 2.000 specifically
+- **Reading now finds the payload the way the spec defines it**: the first record in the NDEF
+  message whose type is `application/opentag3d`, rather than assuming it is the first record.
+  A tag carrying a URI record ahead of it - so a phone opens a product page - previously
+  failed with "Tag holds an NDEF record of type 'U'" and now reads. Alongside that: TLVs
+  before the NDEF one (NULL padding, lock control, memory control) are stepped over instead
+  of rejected; a record's ID field is skipped as well as its ID length byte, which had been
+  parsing third-party records from the wrong offset; and a chunked record is reported rather
+  than half-read. The write-time version check reads the same way, in 48-byte steps until the
+  record is in view
+- **Windows PowerShell 5.1 is no longer supported.** `#Requires` and the manifest now ask for
+  7.0, and the three branches that existed only to detect 5.1-on-Windows are plain `$IsWindows`
+  tests
 - Fixed **Read tag** showing only the colour swatch and title for a 2.x tag. The results table
   had the 1.003 group headings hard-coded, so every row of a payload grouped Display /
   Inventory / Operational was filtered out. Group headings now come from the tag's own spec

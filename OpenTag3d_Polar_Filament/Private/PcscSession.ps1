@@ -135,7 +135,6 @@ function Get-PcscPlatform {
     .SYNOPSIS
         Which PC/SC implementation this host uses: Windows, Linux or macOS.
     #>
-    if ($PSVersionTable.PSVersion.Major -lt 6) { return 'Windows' }
     if ($IsWindows) { return 'Windows' }
     if ($IsMacOS)   { return 'macOS' }
     if ($IsLinux)   { return 'Linux' }

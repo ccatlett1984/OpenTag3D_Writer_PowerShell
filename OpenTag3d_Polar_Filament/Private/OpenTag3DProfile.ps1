@@ -18,7 +18,7 @@ function Get-OpenTag3DProfileDir {
     [CmdletBinding()]
     param()
 
-    if ($PSVersionTable.PSVersion.Major -lt 6 -or $IsWindows) {
+    if ($IsWindows) {
         $root = $env:APPDATA
         if ([string]::IsNullOrWhiteSpace($root)) { $root = [Environment]::GetFolderPath('ApplicationData') }
         $dir = Join-Path (Join-Path $root 'OpenTag3D') 'Profiles'
