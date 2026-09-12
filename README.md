@@ -1,12 +1,13 @@
-# Polar Filament OpenTag3D
+# OpenTag3D RFID Writer
 
 A PowerShell module for working with [OpenTag3D](https://opentag3d.info) NFC tags on
-Polar Filament spools. It looks up spool data by serial, builds NTAG21x tag images,
-reads and decodes existing tags, and writes tags through a PC/SC reader such as the
-ACR122U. Tags for any other vendor can be filled in by hand in the browser UI, which is
+filament spools. It looks up spool data by serial (currently only supported by Polar Filament, 
+builds NTAG21x tag images, reads and decodes existing tags, and writes tags through a PC/SC reader
+such as the ACR122U. Tags for any other vendor can be filled in by hand in the browser UI, which is
 also there for anyone who would rather not use the console.
 
-Not affiliated with Polar Filament or the OpenTag3D project.
+Not affiliated with Polar Filament. 
+I am affiliated with the OpenTag3D project.
 
 ## What it does
 
