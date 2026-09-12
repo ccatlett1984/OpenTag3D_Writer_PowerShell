@@ -1,0 +1,24 @@
+name: Publish to PowerShell Gallery
+
+on:
+  release:
+    types: [published] # Triggers when you create a GitHub Release
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Publish Module
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          # Define the path to your module directory inside the repo
+          $modulePath = "./OpenTag3DWriter" 
+          
+          # Publish using the secret API key
+          Publish-Module -Path $modulePath -NugetApiKey $env:NUGET_API_KEY -Verbose
