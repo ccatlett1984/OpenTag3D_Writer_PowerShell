@@ -27,12 +27,9 @@
     Substring of the PC/SC reader name. Defaults to the first reader matching 'ACR122'.
 
 .PARAMETER Force
-    Write even when the spool already holds a different OpenTag3D spec version. Without it a
-    mismatch is refused and nothing is written, tag and image versions both named.
-
-.PARAMETER SkipBlankPages
-    Do not write pages whose image bytes are all zero. Faster on blank tags, but leaves stale
-    data behind when rewriting a tag that already holds a longer payload.
+    Write even when the spool already holds a different OpenTag3D spec version - that is,
+    deliberately migrate the tag from one version to another. Without it a mismatch is refused
+    and nothing is written, tag and image versions both named.
 
 .EXAMPLE
     Write-OpenTag3DTag -Path .\50017-FYG5-NTAG215-Extended-Ndef.bin
@@ -56,10 +53,9 @@
     FullName property, so FileInfo objects pipe straight in.
 
 .EXAMPLE
-    Write-OpenTag3DTag -Path .\tag.bin -ReaderName 'ACR122U PICC' -SkipBlankPages -Verbose
+    Write-OpenTag3DTag -Path .\tag.bin -ReaderName 'ACR122U PICC' -Verbose
 
-    Targets a specific reader by name substring and skips all-zero pages, which is noticeably
-    faster on a factory-blank tag. Verification still covers every page, so a tag holding
+    Targets a specific reader by name substring. Verification covers every page, so a tag holding
     stale data from a longer payload fails rather than being left half-updated.
 #>
     [CmdletBinding(PositionalBinding = $false, SupportsShouldProcess, ConfirmImpact = 'Medium', DefaultParameterSetName = 'Path')]
@@ -75,8 +71,6 @@
 
         [Parameter()]
         [string]$ReaderName,
-
-        [switch]$SkipBlankPages,
 
         [switch]$Force
     )
@@ -115,9 +109,12 @@
             }
 
             # --- refuse to change the spec version of a tag already carrying data ---
-            # Writing 2.001 over a 1.003 spool silently changes what every other reader will
-            # make of it, so the versions have to agree unless -Force says otherwise. A blank
-            # or non-OpenTag3D tag has nothing to disagree with and writes normally.
+            # Not because the result would be misread: the payload declares its version at
+            # 0x00, so a version-aware reader handles whichever version it finds. This is a
+            # guard against changing the format by accident - the module's default version
+            # moves over time, and editing one field on an existing spool should not silently
+            # migrate the tag. A blank or non-OpenTag3D tag has nothing to disagree with and
+            # writes normally.
             $imageVersion = $null
             try {
                 $imagePayload = Get-OpenTag3DNdefPayload -UserMemory $image
@@ -148,10 +145,46 @@
 
                         if ($shown -ne $imageVersion) {
                             if ($Force) {
-                                Write-Warning "Spool tag holds OpenTag3D $shown; writing $imageVersion over it because -Force was given."
+                                # Worded without naming -Force: the browser UI reaches this by
+                                # a confirmation click, not a parameter.
+                                Write-Warning "Migrating the spool from OpenTag3D $shown to $imageVersion."
                             }
                             else {
-                                throw "Spec version mismatch: this image is OpenTag3D $imageVersion, the spool on the reader holds OpenTag3D $shown. Nothing was written. Rebuild the image as $shown, or pass -Force to overwrite the tag with $imageVersion."
+                                # The two directions go wrong differently, so say the one that
+                                # applies rather than both.
+                                $imageRaw = (Get-OpenTag3DSpec -SpecVersion $imageVersion).Raw
+                                $tagRaw   = if ($onTag) { (Get-OpenTag3DSpec -SpecVersion $onTag).Raw } else { $rawOnTag }
+                                $upgrade  = $imageRaw -gt $tagRaw
+                                $why = if ($upgrade) {
+                                           "readers that predate $imageVersion will refuse the tag afterwards"
+                                       } else {
+                                           "$shown fields that $imageVersion has no room for would be lost"
+                                       }
+
+                                # Fields the target version cannot hold, for a caller that wants
+                                # to show what a downgrade costs.
+                                $lost = @()
+                                if (-not $upgrade -and $onTag) {
+                                    $keep = @((Get-OpenTag3DFieldTable -SpecVersion $imageVersion) | ForEach-Object { $_.Id })
+                                    $lost = @((Get-OpenTag3DFieldTable -SpecVersion $onTag) |
+                                                Where-Object { $_.Id -notin $keep } | ForEach-Object { $_.Name })
+                                }
+
+                                # A structured error so a caller - the browser UI - can offer to
+                                # migrate deliberately rather than having to match on the text.
+                                $detail = [pscustomobject]@{
+                                    ImageVersion = $imageVersion
+                                    TagVersion   = $shown
+                                    Upgrade      = $upgrade
+                                    Why          = $why
+                                    Lost         = $lost
+                                }
+                                $message = "Spec version mismatch: this image is OpenTag3D $imageVersion, the spool on the reader holds OpenTag3D $shown. Changing a tag's spec version is a deliberate act - $why. Nothing was written. Rebuild the image as $shown, or pass -Force to rewrite the tag as $imageVersion."
+                                throw ([System.Management.Automation.ErrorRecord]::new(
+                                    [System.InvalidOperationException]::new($message),
+                                    'SpecVersionMismatch',
+                                    [System.Management.Automation.ErrorCategory]::InvalidData,
+                                    $detail))
                             }
                         }
                         else { Write-Verbose "Spool and image agree on OpenTag3D $shown" }
@@ -181,17 +214,14 @@
             # --- write user memory ---
             if (-not $PSCmdlet.ShouldProcess($session.Reader, "Write $($spec.UserPages) pages to $($spec.TagType) tag $tagHex")) { return }
 
+            # Every page is written, including the all-zero ones. Skipping them would be
+            # quicker on a factory-blank tag, but over a tag that already held a longer
+            # payload it leaves the old bytes in place past the new terminator.
             $written = 0
-            $skipped = 0
             for ($p = 0; $p -lt $spec.UserPages; $p++) {
                 $page   = 4 + $p
                 $offset = 16 + ($p * 4)
                 $chunk  = $image[$offset..($offset + 3)]
-
-                if ($SkipBlankPages -and ($chunk | Where-Object { $_ -ne 0 }).Count -eq 0) {
-                    $skipped++
-                    continue
-                }
 
                 $apdu = [byte[]]@(0xFF,0xD6,0x00,[byte]$page,0x04) + $chunk
                 $w = Invoke-PcscApdu -Session $session -Apdu $apdu
@@ -205,7 +235,7 @@
                 }
             }
             Write-Progress -Activity "Writing $($spec.TagType)" -Completed
-            Write-Verbose "Wrote $written pages, skipped $skipped"
+            Write-Verbose "Wrote $written pages"
 
             # --- verify (always) ---
             $bad = 0

@@ -183,7 +183,6 @@ Writes an existing image to a tag.
 | `-Path` | path to `.bin` | Accepts pipeline input from `Get-ChildItem` |
 | `-Bytes` | `byte[]` | In-memory image instead of a file |
 | `-ReaderName` | name fragment | Defaults to the first reader matching `ACR122`. See [Reader names](#reader-names) |
-| `-SkipBlankPages` | switch | Skips all-zero pages; faster on blank tags |
 | `-Force` | switch | Write even if the spool holds a different spec version |
 
 Always performed: the chip is identified (see [Chip identification](#chip-identification))
@@ -286,18 +285,41 @@ refuse the same combination with that explanation.
 ### Writing over an existing spool
 
 `Write-OpenTag3DTag` reads the version off the tag before it writes anything, and **refuses
-to change it**. Putting a 2.001 payload over a 1.003 spool would change what every other
-reader makes of those bytes, so a mismatch stops the write with both versions named and the
-tag untouched — the check runs before even the capability container is written.
+to change it** unless told to. Not because the result would be misread — the payload declares
+its version at `0x00`, so a version-aware reader handles whichever version it finds. The guard
+is against changing a tag's format *by accident*: the module's default version moves over time,
+so editing one field on an existing spool should not quietly migrate the tag with it.
+
+Two things do go wrong when a version changes, and both are reasons to make it deliberate:
+going up, readers that predate the new version reject the tag rather than reading it; going
+down, fields the older layout has no room for are lost. The error names whichever applies. A
+mismatch stops the write with both versions named and the tag untouched — the check runs
+before even the capability container is written.
 
 ```
 Spec version mismatch: this image is OpenTag3D 2.001, the spool on the reader holds
-OpenTag3D 1.003. Nothing was written. Rebuild the image as 1.003, or pass -Force to
-overwrite the tag with 2.001.
+OpenTag3D 1.003. Changing a tag's spec version is a deliberate act - readers that predate
+2.001 will refuse the tag afterwards. Nothing was written. Rebuild the image as 1.003, or
+pass -Force to rewrite the tag as 2.001.
 ```
 
 A blank tag, or one holding something that is not an OpenTag3D record, has no version to
-disagree with and writes normally. `-Force` writes anyway, warning as it goes.
+disagree with and writes normally. `-Force` migrates the tag to the image's version, warning
+as it goes.
+
+In the browser UI the same refusal becomes a confirmation rather than a dead end. **Write to
+tag** reports what the spool holds and what writing would make it, says which way it goes
+wrong, lists the fields a downgrade would drop, and offers **Migrate to 2.001** against
+**Cancel** — the same pattern as the NTAG213 truncation prompt. Nothing is written until you
+confirm.
+
+![The migration confirmation, writing a 2.001 image at a 1.003 spool](docs/gui-version-migration.png)
+
+Downgrading swaps the reason for the fields that would be lost, and names them.
+
+Every page of user memory is written, including the all-zero ones. Skipping blank pages would
+be quicker on a factory-fresh tag, but over a tag that already held a longer payload it leaves
+the old bytes sitting past the new terminator.
 
 ### Converting between versions
 

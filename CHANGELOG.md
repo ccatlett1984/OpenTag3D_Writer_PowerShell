@@ -9,9 +9,23 @@
   Checked field by field against opentag3d.info/spec.json on 2026-09-11
 - **Writing refuses to change a spool's spec version.** `Write-OpenTag3DTag` reads the version
   off the tag first; if it differs from the image's, nothing is written - not even the
-  capability container - and the error names both versions. A blank tag, or one holding
-  something that is not an OpenTag3D record, has nothing to disagree with and writes normally.
-  `-Force` overrides, with a warning
+  capability container - and the error names both versions. This guards against migrating a
+  tag's format by accident, now that the module's default version moves over time; a payload
+  declares its own version at 0x00, so a version-aware reader was never going to misread it.
+  What does go wrong is that readers predating the new version reject the tag, and converting
+  downwards drops fields. A blank tag, or one holding something that is not an OpenTag3D
+  record, has nothing to disagree with and writes normally. `-Force` migrates deliberately,
+  with a warning
+- **The browser UI can migrate a tag between spec versions.** A version mismatch on **Write to
+  tag** now raises a confirmation naming both versions, the reason that direction is a one-way
+  door, and the fields a downgrade would drop, with **Migrate to x.xxx** against **Cancel** -
+  the same pattern the NTAG213 truncation prompt uses. The check itself is not duplicated in
+  the UI: `Write-OpenTag3DTag` raises a structured `SpecVersionMismatch` error carrying both
+  versions, and confirming re-runs the write with `-Force`
+- **Removed `-SkipBlankPages` from `Write-OpenTag3DTag`** (breaking). Every page of user
+  memory is now written. Skipping all-zero pages was quicker on a factory-blank tag, but over
+  a tag already holding a longer payload it left the old bytes past the new terminator - which
+  the verify pass then reported as a generic byte mismatch
 - Version lookup now prefers an exact table and otherwise takes the closest one below it in the
   same major, so a future 2.002 tag is read with the 2.001 table rather than the 2.000 one
 - The NTAG213 refusal, the GUI's tag-type list and the Mode control now key on the major

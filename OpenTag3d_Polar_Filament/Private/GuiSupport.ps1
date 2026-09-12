@@ -206,7 +206,31 @@ function Invoke-OpenTag3DGuiAction {
                 if (-not $CanWrite) { return @{ ok = $false; message = 'No PC/SC reader available.' } }
                 $p = @{ Bytes = $image }
                 if ($r.readerName) { $p.ReaderName = $r.readerName }
-                $text = (Write-OpenTag3DTag @p 6>&1 3>&1 | Out-String).Trim()
+
+                # Migrating a tag from one spec version to another is deliberate, so the
+                # cmdlet refuses by default. Rather than duplicate the check here, let it
+                # refuse and turn its structured error into a confirmation for the page;
+                # confirming comes back with -Force.
+                if ($r.confirmMigrate) { $p.Force = $true }
+
+                try {
+                    $text = (Write-OpenTag3DTag @p 6>&1 3>&1 | Out-String).Trim()
+                }
+                catch {
+                    if ($_.FullyQualifiedErrorId -notlike 'SpecVersionMismatch*' -or $r.confirmMigrate) { throw }
+                    $d = $_.TargetObject
+                    return @{
+                        ok           = $false
+                        confirm      = 'version'
+                        message      = "This spool holds OpenTag3D $($d.TagVersion). Writing this image rewrites it as $($d.ImageVersion)."
+                        tagVersion   = "$($d.TagVersion)"
+                        imageVersion = "$($d.ImageVersion)"
+                        upgrade      = [bool]$d.Upgrade
+                        why          = "$($d.Why)"
+                        lost         = @($d.Lost)
+                    }
+                }
+
                 $msg = if ($text) { $text } else { 'Written.' }
                 return @{ ok = $true; message = $msg + $warn }
             }
@@ -858,13 +882,11 @@ function Get-OpenTag3DGuiHtml {
     }
   }
 
-  function askConfirm(data, onYes) {
-    $('confirmTitle').textContent = data.message;
-    $('confirmBody').innerHTML =
-      '<ul>' + (data.keeping || []).map(f =>
-        '<li>' + f.name + (f.value ? ': ' + f.value : '') + '</li>').join('') + '</ul>' +
-      '<div style="font-size:.85rem;opacity:.75">' + (data.dropped || 0) +
-      ' extended field(s) will be discarded. To keep everything, choose NTAG215 or NTAG216.</div>';
+  // Shared by both confirmations: title, body, button label, then wire the buttons.
+  function showConfirm(title, bodyHtml, goLabel, onYes) {
+    $('confirmTitle').textContent = title;
+    $('confirmBody').innerHTML = bodyHtml;
+    $('confirmGo').textContent = goLabel;
     $('confirm').style.display = 'block';
     $('editOut').style.display = 'none';
     $('confirmGo').onclick = () => { $('confirm').style.display = 'none'; onYes(); };
@@ -874,7 +896,43 @@ function Get-OpenTag3DGuiHtml {
     };
   }
 
-  async function apply(target, confirmTruncate) {
+  function askMigrate(data, onYes) {
+    const lost = (data.lost || []);
+    const why = (data.why || '');
+    let body = '<div style="font-size:.9rem">' +
+               esc(why.charAt(0).toUpperCase() + why.slice(1)) + '.</div>';
+    if (lost.length) {
+      body += '<ul>' + lost.map(f => '<li>' + esc(f) + '</li>').join('') + '</ul>' +
+              '<div style="font-size:.85rem;opacity:.75">Those fields have no address in ' +
+              esc(data.imageVersion) + ', so whatever the tag holds in them is dropped.</div>';
+    } else {
+      body += '<div style="font-size:.85rem;opacity:.75;margin-top:.5rem">The data carries over ' +
+              'unchanged; only the layout it is written in changes.</div>';
+    }
+    body += '<div style="font-size:.85rem;opacity:.75;margin-top:.5rem">To keep the spool on ' +
+            esc(data.tagVersion) + ' instead, cancel and set the spec version to ' +
+            esc(data.tagVersion) + ' before writing.</div>';
+    showConfirm(data.message, body, 'Migrate to ' + data.imageVersion, onYes);
+  }
+
+  function askConfirm(data, onYes) {
+    $('confirmTitle').textContent = data.message;
+    $('confirmBody').innerHTML =
+      '<ul>' + (data.keeping || []).map(f =>
+        '<li>' + f.name + (f.value ? ': ' + f.value : '') + '</li>').join('') + '</ul>' +
+      '<div style="font-size:.85rem;opacity:.75">' + (data.dropped || 0) +
+      ' extended field(s) will be discarded. To keep everything, choose NTAG215 or NTAG216.</div>';
+    $('confirmGo').textContent = 'Continue anyway';
+    $('confirm').style.display = 'block';
+    $('editOut').style.display = 'none';
+    $('confirmGo').onclick = () => { $('confirm').style.display = 'none'; onYes(); };
+    $('confirmCancel').onclick = () => {
+      $('confirm').style.display = 'none';
+      eshow(true, 'Cancelled. Nothing was saved or written.');
+    };
+  }
+
+  async function apply(target, confirmTruncate, confirmMigrate) {
     if (!loaded) return;
     const btns = [$('applySave'), $('applyWrite'), $('revert')];
     btns.forEach(b => b.disabled = true);
@@ -886,10 +944,13 @@ function Get-OpenTag3DGuiHtml {
         values: collect(), outputDir: $('eOutputDir').value.trim(),
         readerName: $('eReader').value.trim(),
         generic: !!loaded.generic,
-        confirmTruncate: !!confirmTruncate
+        confirmTruncate: !!confirmTruncate,
+        confirmMigrate: !!confirmMigrate
       });
       if (data.confirm === 'truncate') {
-        askConfirm(data, () => apply(target, true));
+        askConfirm(data, () => apply(target, true, confirmMigrate));
+      } else if (data.confirm === 'version') {
+        askMigrate(data, () => apply(target, confirmTruncate, true));
       } else {
         eshow(data.ok, data.message);
       }
